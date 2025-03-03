@@ -3,6 +3,10 @@ using UnityEngine;
 using System.IO;
 using BepInEx.Logging;
 using System.Collections.Generic;
+using System;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System.Linq;
 
 public class ConductorScript
 {
@@ -10,7 +14,7 @@ public class ConductorScript
 
     public AudioSource music;
 
-    private Dictionary<string, SongMap> Songs;
+    private Dictionary<string, SongMap> Songs = new Dictionary<string, SongMap>();
     SongMap song;
 
     private float songPosition;
@@ -21,7 +25,7 @@ public class ConductorScript
 
     bool[] enabledBeats;
 
-    public static event System.Action<int, bool[]> onBeat;
+    public event System.Action<int, bool[]> onBeat;
 
 
     public ConductorScript(string mapDirectory, BepInEx.Logging.ManualLogSource l)
@@ -29,15 +33,51 @@ public class ConductorScript
         this.l = l;
 
         // Read in songs (ie, iterate over mapping directory
+        if (!Directory.Exists(mapDirectory))
+        {
+            l.LogWarning($"Creating map directory: {mapDirectory}");
+            Directory.CreateDirectory(mapDirectory);
+        }
+        string[] files = Directory.GetFiles(mapDirectory, "*.json");
+        foreach (string file in files)
+        {
+            string jsonString = File.ReadAllText(file);
+
+            JObject o1 = JObject.Parse(jsonString);
+
+            string songName = Path.GetFileNameWithoutExtension(file);
+
+            JArray mapsArray = (JArray)o1["maps"];
+            bool[][] beats = mapsArray
+                .Select(row => row
+                .Select(value => value.Value<int>() == 1)  // Convert 1 to true, 0 to false
+                .ToArray())
+                .ToArray();
+
+            Songs[songName] = new SongMap(songName, beats, (float)o1["offset"], (float)o1["bpm"]);
+
+        }
+
+        l.LogInfo("Successfully loaded " + files.Length + " beat maps.");
+
+
     }
 
     public void NewSource(AudioSource music)
     {
         this.music = music;
-        l.LogInfo("New music: " + music.clip);
         Reset();
     }
-    
+
+    public void Pause()
+    {
+        l.LogInfo("Paused conductor.");
+        this.music = null;
+        this.song = null;
+    }
+
+
+    float lastTime = -1f;
     // Must be called from within a script with access to Unity Update
     public void Update()
     {
@@ -46,10 +86,12 @@ public class ConductorScript
             return;
         }
 
-        if(music.time < songPosition) // Song has reset/changed, reload beats
+        if (music.time < lastTime) // Song has reset/changed, reload beats
         {
             Reset();
         }
+        lastTime = music.time;
+
 
         songPosition = music.time - song.offset;
 
@@ -89,11 +131,14 @@ public class ConductorScript
 
     private void Reset()
     {
-        l.LogInfo("NEW SONG: " + music.clip.name);
-        return;
+        
         if (Songs.ContainsKey(music.clip.name))
         {
+            lastBeat = -1;
+            beatNumber = 0;
             song = Songs[music.clip.name];
+            enabledBeats = new bool[song.beats.Length];
+            l.LogInfo("Resetting with song: " + music.clip.name + ", offset: " + song.offset + ", bpm: " + song.bpm);
         }
         else { song = null; }
         
@@ -121,10 +166,15 @@ class SongMap
     public int[][] leftEnabled;
     public int[][] rightEnabled;
 
-    public SongMap(string clipName)
+    public SongMap(string clipName, bool[][] beats, float offset, float bpm)
     {
         this.clipName = clipName;
-        // Read in song mapping
+        this.beats = beats;
+        this.offset = offset;
+        this.bpm = bpm;
+
+        leftEnabled = getLeftEnabled();
+        rightEnabled = getRightEnabled();
     }
 
 

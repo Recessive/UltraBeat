@@ -7,6 +7,8 @@ using Unity.Collections.LowLevel.Unsafe;
 using System.Collections;
 using UnityEngine.PlayerLoop;
 using UnityEngine.SceneManagement;
+using System.IO;
+using System;
 
 namespace UltraBeat
 {
@@ -14,9 +16,13 @@ namespace UltraBeat
     public class Class1 : BaseUnityPlugin
     {
         public static Class1 Instance { get; private set; }
-        ConductorScript conductor;
+        public ConductorScript conductor;
 
-        private void Awake()
+        public bool timePaused = false;
+        private AudioMixer[] audmix;
+        
+
+    private void Awake()
         {
             Instance = this;
 
@@ -24,38 +30,94 @@ namespace UltraBeat
             harmony.PatchAll();
 
             SceneManager.sceneLoaded += SceneLoaded;
+            conductor = new ConductorScript(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "config", "UltraBeat"), Logger);
+            conductor.onBeat += beat;
 
-            conductor = new ConductorScript("", Logger);
+
+            
         }
 
         AudioSource source;
+        bool lastCheck = true;
         void Update()
         {
-            bool sourceNull = (source == null);
-            CheckSource();
-            if(sourceNull && source != null) // New source
+            bool check = CheckSource();
+            if(check && !lastCheck) // New source
             {
                 conductor.NewSource(source);
             }
+            if(!check && lastCheck) // Lost source
+            {
+                conductor.Pause();
+            }
+            else
+            {
+                conductor.Update();
+            }
+
+            lastCheck = check;
+            
         }
 
-        void CheckSource()
+        void beat(int beat, bool[] enabled)
+        {
+            /*if (enabled[1])
+            {
+                Revolver rev = (Revolver)FindObjectOfType(typeof(Revolver));
+
+                if (rev != null)
+                {
+                    Instantiate(rev.superGunSound);
+                }
+            }*/
+            // Logger.LogInfo(beat);
+
+            if (enabled[1] && timePaused)
+            {
+                
+
+
+                Time.timeScale = TimeController.Instance.timeScale * TimeController.Instance.timeScaleModifier;
+
+                AudioMixer[] audmix = new AudioMixer[4]
+                {
+                    MonoSingleton<AudioMixerController>.Instance.allSound,
+                    MonoSingleton<AudioMixerController>.Instance.goreSound,
+                    MonoSingleton<AudioMixerController>.Instance.musicSound,
+                    MonoSingleton<AudioMixerController>.Instance.doorSound
+                };
+
+
+                for (int i = 0; i < audmix.Length; i++)
+                {
+                    audmix[i].SetFloat("lowPassVolume", -80f);
+                }
+
+                timePaused = false;
+            }
+
+            
+        }
+
+        bool CheckSource()
         {
             // Because I cbf patching events into CustomMusicPlayer and MusicManager I'm just gonna check here to see if either of them has a valid clip
+
             MusicManager musman = MonoSingleton<MusicManager>.Instance;
             if (musman != null && musman.targetTheme.clip != null)
             {
                 source = musman.targetTheme;
-                return;
+                return true;
             }
 
             CustomMusicPlayer cusplay = (CustomMusicPlayer)FindObjectOfType(typeof(CustomMusicPlayer));
             if(cusplay != null && cusplay.source.clip != null)
             {
                 source = cusplay.source;
-                return;
+                return true;
             }
             source = null;
+            return false;
         }
 
 
@@ -67,13 +129,13 @@ namespace UltraBeat
         [HarmonyPatch]
         public class Patch
         {
+
+            ConductorScript conductor;
+
             [HarmonyPrefix]
             [HarmonyPatch(typeof(TimeController), "TrueStop")]
             public static bool Prefix(float length, TimeController __instance, float ___currentStop, AudioMixer[] ___audmix)
             {
-
-                Class1.Instance.Logger.LogInfo("Audio Clip: " + Class1.Instance.source.clip.name);
-
                 
 
                 if (!(length > ___currentStop))
@@ -88,14 +150,15 @@ namespace UltraBeat
                     for (int i = 0; i < array.Length; i++)
                     {
                         array[i].SetFloat("lowPassVolume", 0f);
-                        array[i].SetFloat("lowPassVolume", 0f);
                     }
                 }
 
                 Time.timeScale = 0f;
 
-                __instance.StartCoroutine(TimeIsStopped(length, trueStop: true, __instance, ___currentStop, ___audmix));
 
+
+                // __instance.StartCoroutine(TimeIsStopped(length, trueStop: true, __instance, ___currentStop, ___audmix));
+                Class1.Instance.timePaused = true;
 
                 return false;
             }

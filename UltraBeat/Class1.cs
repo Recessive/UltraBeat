@@ -11,6 +11,11 @@ using System.IO;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Net.Http;
+using System.Threading.Tasks;
+using BepInEx.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace UltraBeat
 {
@@ -33,7 +38,7 @@ namespace UltraBeat
         private AudioMixer[] audmix;
         
 
-    private void Awake()
+        private void Awake()
         {
             Instance = this;
 
@@ -41,17 +46,72 @@ namespace UltraBeat
             harmony.PatchAll();
 
             SceneManager.sceneLoaded += SceneLoaded;
-            conductor = new ConductorScript(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "config", "UltraBeat"), Logger);
-            conductor.onBeat += beat;
+            string mapDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "config", "UltraBeat");
 
-
-            
+            if (!Directory.Exists(mapDirectory))
+            {
+                DownloadMaps(mapDirectory, Logger, InitConductor);
+            }
+            else
+            {
+                InitConductor(mapDirectory);
+            }
         }
+
+        void InitConductor(string mapDirectory)
+        {
+            conductor = new ConductorScript(mapDirectory, Logger);
+            conductor.onBeat += beat;
+        }
+
+        static async Task DownloadMaps(string mapDirectory, ManualLogSource Logger, Action<string> callback)
+        {
+            Logger.LogWarning("Expected map directory not found!");
+            Logger.LogMessage($"Creating map directory: {mapDirectory}");
+            Directory.CreateDirectory(mapDirectory);
+
+
+            string mapUrl = "https://api.github.com/repos/Recessive/UltraBeat/contents/maps";
+            Logger.LogMessage("Downloading beatmaps from https://github.com/Recessive/UltraBeat/tree/master/maps");
+
+            var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("User-Agent", "C# App");
+
+            try
+            {
+                // Get repository contents
+                var response = await client.GetStringAsync(mapUrl);
+                var files = JArray.Parse(response);
+
+                // Download each file
+                foreach (var file in files)
+                {
+                    if (file["type"].ToString() == "file")
+                    {
+                        string fileName = file["name"].ToString();
+                        string downloadUrl = file["download_url"].ToString();
+                        string outputPath = Path.Combine(mapDirectory, fileName);
+
+                        byte[] fileData = await client.GetByteArrayAsync(downloadUrl);
+                        await File.WriteAllBytesAsync(outputPath, fileData);
+                        Logger.LogMessage($"Downloaded: {fileName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Error: {ex.Message}");
+            }
+            Logger.LogMessage("Successfully downloaded all maps!");
+            callback(mapDirectory);
+        }
+
 
         AudioSource source;
         bool lastCheck = true;
         void Update()
         {
+            if (conductor == null) return;
             bool check = CheckSource();
             if(check && !lastCheck) // New source
             {

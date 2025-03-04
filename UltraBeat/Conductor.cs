@@ -35,11 +35,6 @@ public class ConductorScript
         this.l = l;
 
         // Read in songs (ie, iterate over mapping directory
-        if (!Directory.Exists(mapDirectory))
-        {
-            l.LogWarning($"Creating map directory: {mapDirectory}");
-            Directory.CreateDirectory(mapDirectory);
-        }
         string[] files = Directory.GetFiles(mapDirectory, "*.json");
         foreach (string file in files)
         {

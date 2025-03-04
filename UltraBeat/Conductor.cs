@@ -23,9 +23,11 @@ public class ConductorScript
     private float lastBeat;
     private int startBeat;
 
-    bool[] enabledBeats;
+    public bool active = false;
 
-    public event System.Action<int, bool[]> onBeat;
+    Dictionary<string, bool> enabledBeats = new Dictionary<string, bool>();
+
+    public event System.Action<int, Dictionary<string, bool>> onBeat;
 
 
     public ConductorScript(string mapDirectory, BepInEx.Logging.ManualLogSource l)
@@ -47,14 +49,20 @@ public class ConductorScript
 
             string songName = Path.GetFileNameWithoutExtension(file);
 
-            JArray mapsArray = (JArray)o1["maps"];
-            bool[][] beats = mapsArray
-                .Select(row => row
+            JObject mapsObject = (JObject)o1["maps"];
+            Dictionary<string, bool[]> mapsDict = mapsObject
+                .Properties()
+                .ToDictionary(
+                prop => prop.Name,
+                prop => prop.Value
                 .Select(value => value.Value<int>() == 1)  // Convert 1 to true, 0 to false
-                .ToArray())
-                .ToArray();
+                .ToArray()
+            );
 
-            Songs[songName] = new SongMap(songName, beats, (float)o1["offset"], (float)o1["bpm"]);
+
+
+
+            Songs[songName] = new SongMap(songName, mapsDict, (float)o1["offset"], (float)o1["bpm"]);
 
         }
 
@@ -74,6 +82,7 @@ public class ConductorScript
         l.LogInfo("Paused conductor.");
         this.music = null;
         this.song = null;
+        active = false;
     }
 
 
@@ -95,16 +104,16 @@ public class ConductorScript
 
         songPosition = music.time - song.offset;
 
-        if (beatNumber > song.beats[0].Length - 1)
+        if (beatNumber > song.beats.Values.First().Length - 1)
         {
             l.LogError("Beats exceeded mapping length!");
         }
 
         if (songPosition > lastBeat)
         {
-            for (int i = 0; i < song.beats.Length; i++)
+            foreach (KeyValuePair<string, bool[]> entry in song.beats)
             {
-                enabledBeats[i] = song.beats[i][beatNumber];
+                enabledBeats[entry.Key] = entry.Value[beatNumber];
             }
 
 
@@ -115,10 +124,10 @@ public class ConductorScript
         }
     }
 
-    public float percentageEnabled(int mapIndex)
+    public float percentageEnabled(string mapKey)
     {
-        float last = song.leftEnabled[mapIndex][Mathf.Max(0, beatNumber - 1)] * song.Crotchet;
-        float next = song.rightEnabled[mapIndex][Mathf.Min(song.rightEnabled[mapIndex].Length - 1, beatNumber)] * song.Crotchet;
+        float last = song.leftEnabled[mapKey][Mathf.Max(0, beatNumber - 1)] * song.Crotchet;
+        float next = song.rightEnabled[mapKey][Mathf.Min(song.rightEnabled[mapKey].Length - 1, beatNumber)] * song.Crotchet;
 
         return (last >= next) ? 1 : (songPosition - last) / (next - last);
     }
@@ -137,10 +146,14 @@ public class ConductorScript
             lastBeat = -1;
             beatNumber = 0;
             song = Songs[music.clip.name];
-            enabledBeats = new bool[song.beats.Length];
+            enabledBeats.Clear();
             l.LogInfo("Resetting with song: " + music.clip.name + ", offset: " + song.offset + ", bpm: " + song.bpm);
+            active = true;
         }
-        else { song = null; }
+        else { 
+            song = null;
+            active = false;
+        }
         
     }
 }
@@ -161,68 +174,85 @@ class SongMap
         }
     }
 
-    public bool[][] beats;
+    public Dictionary<string, bool[]> beats;
 
-    public int[][] leftEnabled;
-    public int[][] rightEnabled;
+    public Dictionary<string, int[]> leftEnabled;
+    public Dictionary<string, int[]> rightEnabled;
 
-    public SongMap(string clipName, bool[][] beats, float offset, float bpm)
+    public SongMap(string clipName, Dictionary<string, bool[]> beats, float offset, float bpm)
     {
         this.clipName = clipName;
         this.beats = beats;
         this.offset = offset;
         this.bpm = bpm;
 
+        if (!beatLengthsMatch(beats))
+        {
+            Debug.LogWarning("Beat maps on " + clipName + " mapping are different lengths! This may cause unexpected results");
+        }
+
         leftEnabled = getLeftEnabled();
         rightEnabled = getRightEnabled();
     }
 
+    bool beatLengthsMatch(Dictionary<string, bool[]> beats)
+    {
+        int prevLength = beats.Values.First().Length;
+        foreach (KeyValuePair<string, bool[]> entry in this.beats)
+        {
+            if(entry.Value.Length != prevLength)
+            {
+                return false;
+            }
+        }
+        return true;
 
-    int[][] getLeftEnabled()
+    }
+
+
+    Dictionary<string, int[]> getLeftEnabled()
     {
 
-        // Create a list that has the left most enabled beat at each position in all maps
-
-        List<int[]> res = new List<int[]>();
-        for (int i = 0; i < beats.Length; i++)
+        // Create a dictionary that has the left most enabled beat at each position in all maps
+        Dictionary<string, int[]> res = new Dictionary<string, int[]>();
+        foreach (KeyValuePair<string, bool[]> entry in this.beats)
         {
             List<int> _ = new List<int>();
             // Record the last enabled beat (left most)
             int lastEnabled = 0;
-            for (int j = 0; j < beats[i].Length; j++)
+            for (int j = 0; j < entry.Value.Length; j++)
             {
-                if (beats[i][j]) lastEnabled = j;
+                if (entry.Value[j]) lastEnabled = j;
                 _.Add(lastEnabled);
             }
-            res.Add(_.ToArray());
+            res[entry.Key] = _.ToArray();
         }
 
-        return res.ToArray();
+        return res;
     }
 
-    int[][] getRightEnabled()
+    Dictionary<string, int[]> getRightEnabled()
     {
 
-        // Create a list that has the right most enabled beat at each position in all maps
+        // Create a dictionary that has the right most enabled beat at each position in all maps
+        Dictionary<string, int[]> res = new Dictionary<string, int[]>();
 
-        List<int[]> res = new List<int[]>();
-
-        for (int i = 0; i < beats.Length; i++)
+        foreach (KeyValuePair<string, bool[]> entry in this.beats)
         {
             List<int> _ = new List<int>();
-            int lastEnabled = beats[i].Length;
+            int lastEnabled = entry.Value.Length;
 
             // Iterate through the list backwards to get the right most
-            for (int j = beats[i].Length - 1; j >= 0; j--)
+            for (int j = entry.Value.Length - 1; j >= 0; j--)
             {
-                if (beats[i][j]) lastEnabled = j;
+                if (entry.Value[j]) lastEnabled = j;
                 _.Add(lastEnabled);
             }
             _.Reverse();
-            res.Add(_.ToArray());
+            res[entry.Key] = _.ToArray();
         }
 
-        return res.ToArray();
+        return res;
     }
 
 }

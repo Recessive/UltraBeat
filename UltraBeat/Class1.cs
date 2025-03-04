@@ -9,16 +9,27 @@ using UnityEngine.PlayerLoop;
 using UnityEngine.SceneManagement;
 using System.IO;
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 
 namespace UltraBeat
 {
+    public enum PauseLength
+    {
+        None,
+        Mini,
+        Short,
+        Long
+    }
+
+
     [BepInPlugin("UltraBeat.recessive.ultrakill", "UltraBeat", "0.0.1")]
     public class Class1 : BaseUnityPlugin
     {
         public static Class1 Instance { get; private set; }
         public ConductorScript conductor;
 
-        public bool timePaused = false;
+        public PauseLength timePause = PauseLength.None;
         private AudioMixer[] audmix;
         
 
@@ -59,7 +70,7 @@ namespace UltraBeat
             
         }
 
-        void beat(int beat, bool[] enabled)
+        void beat(int beat, Dictionary<string, bool> enabled)
         {
             /*if (enabled[1])
             {
@@ -72,31 +83,61 @@ namespace UltraBeat
             }*/
             // Logger.LogInfo(beat);
 
-            if (enabled[1] && timePaused)
+            if (enabled["fast"])
             {
-                
-
-
-                Time.timeScale = TimeController.Instance.timeScale * TimeController.Instance.timeScaleModifier;
-
-                AudioMixer[] audmix = new AudioMixer[4]
+                Revolver rev = (Revolver)FindObjectOfType(typeof(Revolver));
+                if(rev != null && !rev.altVersion)
                 {
+                    FieldInfo shootReadyInfo = AccessTools.Field(typeof(Revolver), "shootReady");
+                    FieldInfo gunReadyInfo = AccessTools.Field(typeof(Revolver), "gunReady");
+                    shootReadyInfo.SetValue(rev, true);
+                    gunReadyInfo.SetValue(rev, true);
+                }
+            }
+
+            if (enabled["fast"] && timePause == PauseLength.Mini)
+            {
+                Unfreeze();
+                timePause = PauseLength.None;
+            }
+
+            if (enabled["freeze_short"] && timePause == PauseLength.Short)
+            {
+                BigUnfreeze();
+                timePause = PauseLength.None;
+            }
+
+            if (enabled["freeze_long"] && timePause == PauseLength.Long)
+            {
+                BigUnfreeze();
+                timePause = PauseLength.None;
+            }
+
+
+        }
+
+        void BigUnfreeze()
+        {
+            AudioMixer[] audmix = new AudioMixer[4]
+            {
                     MonoSingleton<AudioMixerController>.Instance.allSound,
                     MonoSingleton<AudioMixerController>.Instance.goreSound,
                     MonoSingleton<AudioMixerController>.Instance.musicSound,
                     MonoSingleton<AudioMixerController>.Instance.doorSound
-                };
+            };
 
 
-                for (int i = 0; i < audmix.Length; i++)
-                {
-                    audmix[i].SetFloat("lowPassVolume", -80f);
-                }
-
-                timePaused = false;
+            for (int i = 0; i < audmix.Length; i++)
+            {
+                audmix[i].SetFloat("lowPassVolume", -80f);
             }
 
-            
+            Unfreeze();
+        }
+
+        void Unfreeze()
+        {
+            Time.timeScale = TimeController.Instance.timeScale * TimeController.Instance.timeScaleModifier;
         }
 
         bool CheckSource()
@@ -129,14 +170,38 @@ namespace UltraBeat
         [HarmonyPatch]
         public class Patch
         {
+            // Hit stop length values:
+            // 0.005
+            // 0.05
+            // 0.1
+            [HarmonyPrefix]
+            [HarmonyPatch(typeof(TimeController), "HitStop")]
+            public static bool HitStopPrefix(float length)
+            {
+                return true;
+                // Class1.Instance.Logger.LogInfo("HitStop length: " + length);
+                PauseLength currentPause = Class1.Instance.timePause;
+                if (currentPause == PauseLength.Short || currentPause == PauseLength.Long)
+                {
+                    return false;
+                }
+                Time.timeScale = 0f;
+                Class1.Instance.timePause = PauseLength.Mini;
 
-            ConductorScript conductor;
+                /*if (length > currentStop)
+                {
+                    currentStop = length;
+                    Time.timeScale = 0f;
+                    StartCoroutine(TimeIsStopped(length, trueStop: false));
+                }*/
+                return false;
+            }
 
             [HarmonyPrefix]
             [HarmonyPatch(typeof(TimeController), "TrueStop")]
             public static bool Prefix(float length, TimeController __instance, float ___currentStop, AudioMixer[] ___audmix)
             {
-                
+                if (!Class1.Instance.conductor.active) return true;
 
                 if (!(length > ___currentStop))
                 {
@@ -156,9 +221,17 @@ namespace UltraBeat
                 Time.timeScale = 0f;
 
 
-
                 // __instance.StartCoroutine(TimeIsStopped(length, trueStop: true, __instance, ___currentStop, ___audmix));
-                Class1.Instance.timePaused = true;
+
+                if(length > 0.25f)
+                {
+                    Class1.Instance.timePause = PauseLength.Long;
+                }
+                else
+                {
+                    Class1.Instance.timePause = PauseLength.Short;
+                }
+                
 
                 return false;
             }

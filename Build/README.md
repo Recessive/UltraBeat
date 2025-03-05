@@ -24,7 +24,7 @@ Currently mapped songs can be found here: https://github.com/Recessive/UltraBeat
 If you would like to add your own song mappings, simply add a new `json` file to `ULTRAKILL/BepInEx/config/UltraBeat`. The `json` file should be the **exact** name of the song you are mapping.
 
 ### Mapping tutorial
-**UltraBeat** expects the name of a song mapping to be exactly the same as the name of the song in game. For example, [Maganeko - The Cyber Grind](https://www.youtube.com/watch?v=e9EqU9y69vU) is split into two songs:
+**UltraBeat** expects the name of a song mapping to be exactly the same as the name of the song in game. For example, [Meganeko - The Cyber Grind](https://www.youtube.com/watch?v=e9EqU9y69vU) is split into two songs:
 
 - The Cyber Grind - Final Version 1 (Intro only)
 - The Cyber Grind - Final Version 1 (seamless loop without intro)
@@ -51,4 +51,5 @@ This would definitely be too short for a full length song. To know how many beat
 
 If you want higher precision, multiply the bpm by some multiple. To map half notes, the bpm needs to be *at least twice* the base bpm. To map quarter notes, it needs to be *at least four times* the base and so on.
 
-I have mapping software that handles all this for you. Message Recessive on discord and I'll send it over
+## Mapping software
+I built some mapping software a few years ago. The format differs, but it's trivial to convert to the `json` format found here. Download the executable from releases: https://github.com/Recessive/BeatMapper

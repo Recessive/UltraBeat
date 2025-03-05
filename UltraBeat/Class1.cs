@@ -127,7 +127,17 @@ namespace UltraBeat
             }
 
             lastCheck = check;
-            
+
+
+            if (conductor.active)
+            {
+                Revolver rev = (Revolver)FindObjectOfType(typeof(Revolver));
+                if (rev != null && !rev.altVersion)
+                {
+                    rev.shootCharge = 0f; // Prevent revolver from reloading normally whilst conducting
+                }
+            }
+
         }
 
         void beat(int beat, Dictionary<string, bool> enabled)

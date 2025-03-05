@@ -85,16 +85,23 @@ public class ConductorScript
     // Must be called from within a script with access to Unity Update
     public void Update()
     {
-        if (song == null)
+
+        if (music == null)
         {
             return;
         }
 
-        if (music.time < lastTime) // Song has reset/changed, reload beats
+        if (music.time < lastTime && music.time < 1f) // Song has reset/changed, reload beats | ONLY DO SO IF SONG IS AT BEGINNING
+            // This is because of bugs involved with Ultrakill switching AudioSources and the song briefly losing time
         {
             Reset();
         }
         lastTime = music.time;
+
+        if (song == null)
+        {
+            return;
+        }
 
 
         songPosition = music.time - song.offset;
@@ -135,7 +142,7 @@ public class ConductorScript
 
     private void Reset()
     {
-        
+        l.LogInfo("Clip name: " + music.clip.name);
         if (Songs.ContainsKey(music.clip.name))
         {
             lastBeat = -1;

@@ -48,14 +48,7 @@ namespace UltraBeat
             SceneManager.sceneLoaded += SceneLoaded;
             string mapDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BepInEx", "config", "UltraBeat");
 
-            if (!Directory.Exists(mapDirectory))
-            {
-                DownloadMaps(mapDirectory, Logger, InitConductor);
-            }
-            else
-            {
-                InitConductor(mapDirectory);
-            }
+            DownloadMaps(mapDirectory, Logger, InitConductor);
         }
 
         void InitConductor(string mapDirectory)
@@ -66,13 +59,17 @@ namespace UltraBeat
 
         static async Task DownloadMaps(string mapDirectory, ManualLogSource Logger, Action<string> callback)
         {
-            Logger.LogWarning("Expected map directory not found!");
-            Logger.LogMessage($"Creating map directory: {mapDirectory}");
-            Directory.CreateDirectory(mapDirectory);
+
+            if (!Directory.Exists(mapDirectory))
+            {
+                Logger.LogWarning("Expected map directory not found!");
+                Logger.LogMessage($"Creating map directory: {mapDirectory}");
+                Directory.CreateDirectory(mapDirectory);
+            }
 
 
             string mapUrl = "https://api.github.com/repos/Recessive/UltraBeat/contents/maps";
-            Logger.LogMessage("Downloading beatmaps from https://github.com/Recessive/UltraBeat/tree/master/maps");
+            Logger.LogMessage("Checking for new beatmaps from https://github.com/Recessive/UltraBeat/tree/master/maps");
 
             var client = new HttpClient();
             client.DefaultRequestHeaders.Add("User-Agent", "C# App");
@@ -92,6 +89,10 @@ namespace UltraBeat
                         string downloadUrl = file["download_url"].ToString();
                         string outputPath = Path.Combine(mapDirectory, fileName);
 
+                        if (File.Exists(outputPath)){
+                            continue;
+                        }
+
                         byte[] fileData = await client.GetByteArrayAsync(downloadUrl);
                         await File.WriteAllBytesAsync(outputPath, fileData);
                         Logger.LogMessage($"Downloaded: {fileName}");
@@ -102,7 +103,6 @@ namespace UltraBeat
             {
                 Logger.LogError($"Error: {ex.Message}");
             }
-            Logger.LogMessage("Successfully downloaded all maps!");
             callback(mapDirectory);
         }
 

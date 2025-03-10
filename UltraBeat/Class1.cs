@@ -16,6 +16,7 @@ using System.Threading.Tasks;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Diagnostics;
 
 namespace UltraBeat
 {
@@ -129,7 +130,7 @@ namespace UltraBeat
             lastCheck = check;
 
 
-            if (conductor.active)
+            if (conductor.active && conductor.music.isPlaying)
             {
                 Revolver rev = (Revolver)FindObjectOfType(typeof(Revolver));
                 if (rev != null && !rev.altVersion)
@@ -246,8 +247,15 @@ namespace UltraBeat
             // 0.1
             [HarmonyPrefix]
             [HarmonyPatch(typeof(TimeController), "HitStop")]
-            public static bool HitStopPrefix(float length)
+            public static bool HitStopPrefix(float length, TimeController __instance)
             {
+                if (!Class1.Instance.conductor.active || !Class1.Instance.conductor.music.isPlaying) return true;
+
+                if (length == 0.1f)
+                {
+                    // __instance.TrueStop(5f);
+                    return false;
+                }
                 return true;
                 // Class1.Instance.Logger.LogInfo("HitStop length: " + length);
                 PauseLength currentPause = Class1.Instance.timePause;
@@ -268,10 +276,59 @@ namespace UltraBeat
             }
 
             [HarmonyPrefix]
+            [HarmonyPatch(typeof(TimeController), "ParryFlash")]
+            public static bool ParryFlashPrefix(TimeController __instance, GameObject ___parryLight, GameObject ___parryFlash)
+            {
+                if (!Class1.Instance.conductor.active || !Class1.Instance.conductor.music.isPlaying) return true;
+
+                float length = 5f; // Long pause
+                StackTrace stackTrace = new StackTrace();
+                for (int i = 1; i < stackTrace.FrameCount; i++)
+                {
+                    StackFrame frame = stackTrace.GetFrame(i);
+                    MethodBase method = frame.GetMethod();
+                    /*if (method.DeclaringType != typeof(TimeController))
+                    {
+                        Class1.Instance.Logger.LogInfo($"Called by: {method.DeclaringType.FullName}.{method.Name}");
+                    }*/
+                    
+
+                    if (method.Name == "ParryProjectile") // Set projectile parries to short pause
+                    {
+                        length = 1f; // Short pause
+                        break;
+                    }
+                }
+                
+                GameObject gameObject = UnityEngine.Object.Instantiate(___parryLight, MonoSingleton<PlayerTracker>.Instance.GetTarget().position, Quaternion.identity, MonoSingleton<PlayerTracker>.Instance.GetTarget());
+                Light component;
+                if (__instance.parryFlashEnabled)
+                {
+                    if (___parryFlash != null)
+                    {
+                        ___parryFlash.SetActive(value: true);
+                    }
+
+                    __instance.Invoke("HideFlash", 0.1f);
+                }
+                else if (gameObject.TryGetComponent<Light>(out component))
+                {
+                    component.enabled = false;
+                }
+
+                MonoSingleton<TimeController>.Instance.TrueStop(length);
+                MonoSingleton<CameraController>.Instance.CameraShake(0.5f);
+                MonoSingleton<RumbleManager>.Instance.SetVibration(RumbleProperties.ParryFlash);
+
+                return false;
+            }
+
+            [HarmonyPrefix]
             [HarmonyPatch(typeof(TimeController), "TrueStop")]
             public static bool Prefix(float length, TimeController __instance, float ___currentStop, AudioMixer[] ___audmix)
             {
-                if (!Class1.Instance.conductor.active) return true;
+                if (!Class1.Instance.conductor.active || !Class1.Instance.conductor.music.isPlaying) return true;
+                
 
                 if (!(length > ___currentStop))
                 {
@@ -293,13 +350,15 @@ namespace UltraBeat
 
                 // __instance.StartCoroutine(TimeIsStopped(length, trueStop: true, __instance, ___currentStop, ___audmix));
 
-                if(length > 0.25f)
+                if(length == 1f) // Short pause for projectile parries
                 {
-                    Class1.Instance.timePause = PauseLength.Long;
+                    Class1.Instance.timePause = PauseLength.Short;
+                    Class1.Instance.Logger.LogInfo("Short pause");
                 }
                 else
                 {
-                    Class1.Instance.timePause = PauseLength.Short;
+                    Class1.Instance.timePause = PauseLength.Long;
+                    Class1.Instance.Logger.LogInfo("Long pause");
                 }
                 
 

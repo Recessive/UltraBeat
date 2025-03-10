@@ -1,6 +1,6 @@
 {
     "name": "UltraBeat",
-    "version_number": "0.0.2",
+    "version_number": "0.0.3",
     "website_url": "https://github.com/Recessive/UltraBeat",
     "description": "Turn ULTRAKILL into a rhythm game",
     "dependencies": [

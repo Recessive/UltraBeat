@@ -7,8 +7,8 @@ If the mod comes across a song it doesn't have a map for the game will go back t
 - Default revolver reloads in sync to the beat (you'll quickly realise why the alt revolver doesn't)
 - Freeze-frame unfreezes in sync with the beat
     - Splits freeze frames into long and short
-    - Short freeze frame waits for minor beats
-    - Long freeze frame (fully charged jackhammer) waits for major beats
+    - Short freeze frame waits for minor beats (Projectile parrying)
+    - Long freeze frame waits for major beats (All other freeze frames)
 
 ## Installing
 
